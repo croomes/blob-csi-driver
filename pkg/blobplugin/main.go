@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"runtime"
 	"strings"
@@ -36,6 +37,7 @@ import (
 var driverOptions blob.DriverOptions
 var (
 	metricsAddress             = flag.String("metrics-address", "", "export the metrics")
+	enablePprof                = flag.Bool("enable-pprof", false, "enable pprof profiling endpoints on metrics server (requires --metrics-address)")
 	version                    = flag.Bool("version", false, "Print the version and exit.")
 	endpoint                   = flag.String("endpoint", "unix://tmp/csi.sock", "CSI endpoint")
 	kubeconfig                 = flag.String("kubeconfig", "", "Absolute path to the kubeconfig file. Required only when running out of cluster.")
@@ -128,6 +130,22 @@ func serve(_ context.Context, l net.Listener, serveFunc func(net.Listener) error
 func serveMetrics(l net.Listener) error {
 	m := http.NewServeMux()
 	m.Handle("/metrics", legacyregistry.Handler()) //nolint, because azure cloud provider uses legacyregistry currently
+	if *enablePprof {
+		// pprof handlers are registered on http.DefaultServeMux by importing net/http/pprof
+		// We need to explicitly add them to our mux
+		m.HandleFunc("/debug/pprof/", http.DefaultServeMux.ServeHTTP)
+		m.HandleFunc("/debug/pprof/cmdline", http.DefaultServeMux.ServeHTTP)
+		m.HandleFunc("/debug/pprof/profile", http.DefaultServeMux.ServeHTTP)
+		m.HandleFunc("/debug/pprof/symbol", http.DefaultServeMux.ServeHTTP)
+		m.HandleFunc("/debug/pprof/trace", http.DefaultServeMux.ServeHTTP)
+		m.HandleFunc("/debug/pprof/heap", http.DefaultServeMux.ServeHTTP)
+		m.HandleFunc("/debug/pprof/goroutine", http.DefaultServeMux.ServeHTTP)
+		m.HandleFunc("/debug/pprof/allocs", http.DefaultServeMux.ServeHTTP)
+		m.HandleFunc("/debug/pprof/block", http.DefaultServeMux.ServeHTTP)
+		m.HandleFunc("/debug/pprof/mutex", http.DefaultServeMux.ServeHTTP)
+		m.HandleFunc("/debug/pprof/threadcreate", http.DefaultServeMux.ServeHTTP)
+		klog.V(2).Infof("pprof profiling enabled on metrics server")
+	}
 	return trapClosedConnErr(http.Serve(l, m))
 }
 
